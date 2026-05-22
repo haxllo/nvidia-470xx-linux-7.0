@@ -1,1 +1,0 @@
-#define NV_GET_TASK_IOPRIO_PRESENT

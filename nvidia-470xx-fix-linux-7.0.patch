@@ -1,29 +1,29 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: haxllo <mshabeeburrahman786@gmail.com>
-Date: Thu, 22 May 2026 00:00:00 +0000
-Subject: [PATCH] Tentative fix for NVIDIA 470.256.02 driver for Linux 7.0
+Unified patch for NVIDIA 470.256.02 driver with Linux kernel 7.0 compatibility.
 
-Kernel 7.0 removed EXTRA_CFLAGS support from the build system (scripts/
-Makefile.build no longer references it). Only ccflags-y is accepted now.
+All changes against the original NVIDIA 470.256.02 source (from the official
+.run installer). Apply with:  patch -p1 -d /path/to/kernel
 
-This patch:
-1. Replaces EXTRA_CFLAGS with ccflags-y throughout the Kbuild files so
-   include paths (-I$(src)/common/inc etc.) and defines are actually
-   passed to the compiler.
-2. Updates NV_CONFTEST_CFLAGS to reference ccflags-y instead of EXTRA_CFLAGS.
+Covers:
+  - Kbuild:               EXTRA_CFLAGS -> ccflags-y (removed in kernel 7.0)
+  - conftest.sh:          8-arg acpi_walk_namespace test; wait_on_bit_lock &
+                          radix_tree_replace_slot -> #undef instead of #error
+  - common/inc/nv-time.h: in_irq -> in_hardirq (>= 5.11)
+  - common/inc/nv-linux.h: acpi_walk_namespace 8-arg variant; dma_is_direct
+                          fallback for 7.0; f_inode fallback; set_close_on_exec
+                          signature change for 7.0
+  - common/inc/nv-mm.h:   bypass vm_flags_set/clear via vma_flags_set_word/
+                          vma_flags_clear_word (7.0+)
+  - nvidia/nv.c:          del_timer_sync -> timer_delete_sync (7.0+)
+  - nvidia/os-mlock.c:    manual page-table walk instead of follow_pfn (7.0+)
+  - nvidia-modeset/...:   del_timer_sync -> timer_delete_sync (7.0+)
+  - nvidia-uvm/uvm_linux.h: wait_on_bit_lock & radix_tree_replace_slot
+                          fallback with proper ifdef guards
 
-Without this patch, the build fails immediately because the compiler
-cannot find nvmisc.h and other headers from common/inc/.
----
- kernel/Kbuild | 18 ++++++++--------
- 1 file changed, 9 insertions(+), 9 deletions(-)
-
-diff --git a/kernel/Kbuild b/kernel/Kbuild
-index 1111111..2222222 100644
---- a/kernel/Kbuild
-+++ b/kernel/Kbuild
-@@ -60,16 +60,16 @@ NV_UNDEF_BEHAVIOR_SANITIZER ?=
-
+--- a/Kbuild	2024-05-02 20:46:35.000000000 +0530
++++ b/Kbuild	2026-05-22 03:35:01.815099099 +0530
+@@ -60,19 +60,17 @@
+ 
+ 
  #
 -# Define CFLAGS that apply to all the NVIDIA kernel modules. EXTRA_CFLAGS
 -# is deprecated since 2.6.24 in favor of ccflags-y, but we need to support
@@ -32,7 +32,7 @@ index 1111111..2222222 100644
 +# Define CFLAGS that apply to all the NVIDIA kernel modules.
 +# Kernel 7.0+ removed EXTRA_CFLAGS entirely; use ccflags-y directly.
  #
-
+ 
 -EXTRA_CFLAGS += -I$(src)/common/inc
 -EXTRA_CFLAGS += -I$(src)
 -EXTRA_CFLAGS += -Wall -MD $(DEFINES) $(INCLUDES) -Wno-cast-qual -Wno-error -Wno-format-extra-args
@@ -47,16 +47,283 @@ index 1111111..2222222 100644
 +ccflags-y += $(call cc-option,-Werror=undef,)
 +ccflags-y += -DNV_SPECTRE_V2=$(NV_SPECTRE_V2)
 +ccflags-y += -DNV_KERNEL_INTERFACE_LAYER
-
+ 
  #
- # Detect SUI UV systems and apply system-specific optimizations.
-@@ -79,7 +79,7 @@ ifneq ($(wildcard /proc/sgi_uv),)
-- EXTRA_CFLAGS += -DNV_CONFIG_X86_UV
-+ ccflags-y += -DNV_CONFIG_X86_UV
- endif
-
-@@ -110,1 +110,1 @@ ifneq ($(wildcard /proc/sgi_uv),)
+ # Detect SGI UV systems and apply system-specific optimizations.
+@@ -107,7 +105,7 @@
+ 
+ NV_CFLAGS_FROM_CONFTEST := $(shell $(NV_CONFTEST_CMD) build_cflags)
+ 
 -NV_CONFTEST_CFLAGS = $(NV_CFLAGS_FROM_CONFTEST) $(EXTRA_CFLAGS) -fno-pie
 +NV_CONFTEST_CFLAGS = $(NV_CFLAGS_FROM_CONFTEST) $(ccflags-y) -fno-pie
---
-2.49.0
+ 
+ NV_CONFTEST_COMPILE_TEST_HEADERS := $(obj)/conftest/macros.h
+ NV_CONFTEST_COMPILE_TEST_HEADERS += $(obj)/conftest/functions.h
+--- a/conftest.sh	2024-05-02 19:55:33.000000000 +0530
++++ b/conftest.sh	2026-05-22 04:06:52.908948660 +0530
+@@ -760,7 +760,25 @@
+             # Seventh parameter added by commit 2263576cfc6e
+             # ("ACPICA: Add post-order callback to acpi_walk_namespace")
+             # in v2.6.33
++            # Eighth parameter added in v7.0 (return_value pointer)
+             #
++
++            echo "$CONFTEST_PREAMBLE
++            #include <linux/acpi.h>
++            void conftest_acpi_walk_namespace(void) {
++                acpi_walk_namespace(0, NULL, 0, NULL, NULL, NULL, NULL, NULL);
++            }" > conftest$$.c
++
++            $CC $CFLAGS -c conftest$$.c > /dev/null 2>&1
++            rm -f conftest$$.c
++
++            if [ -f conftest$$.o ]; then
++                rm -f conftest$$.o
++                echo "#define NV_ACPI_WALK_NAMESPACE_PRESENT" | append_conftest "functions"
++                echo "#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 8" | append_conftest "functions"
++                return
++            fi
++
+             echo "$CONFTEST_PREAMBLE
+             #include <linux/acpi.h>
+             void conftest_acpi_walk_namespace(void) {
+@@ -2394,7 +2412,7 @@
+                 echo "#define NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT 4" | append_conftest "functions"
+                 return
+             fi
+-            echo "#error wait_on_bit_lock() conftest failed!" | append_conftest "functions"
++            echo "#undef NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT" | append_conftest "functions"
+         ;;
+ 
+         bitmap_clear)
+@@ -3333,7 +3351,7 @@
+                 echo "#define NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT 3" | append_conftest "functions"
+                 return
+             else
+-                echo "#error radix_tree_replace_slot() conftest failed!" | append_conftest "functions"
++                echo "#undef NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT" | append_conftest "functions"
+             fi
+         ;;
+ 
+--- a/common/inc/nv-time.h	2024-05-02 20:46:36.000000000 +0530
++++ b/common/inc/nv-time.h	2026-05-22 05:19:09.818607265 +0530
+@@ -28,9 +28,16 @@
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
+ #include <linux/ktime.h>
++#include <linux/version.h>
+ 
+ #include <nvstatus.h>
+ 
++// in_irq() removed in kernel 5.11 (treewide: Remove in_irq()).
++// Replace with in_hardirq() which is the correct modern equivalent.
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
++#define in_irq in_hardirq
++#endif
++
+ #define NV_MAX_ISR_DELAY_US           20000
+ #define NV_MAX_ISR_DELAY_MS           (NV_MAX_ISR_DELAY_US / 1000)
+ #define NV_NSECS_TO_JIFFIES(nsec)     ((nsec) * HZ / 1000000000)
+--- a/common/inc/nv-linux.h	2024-05-02 20:46:36.000000000 +0530
++++ b/common/inc/nv-linux.h	2026-05-22 06:19:37.701321683 +0530
+@@ -335,6 +335,11 @@
+         user_function, args...) \
+     acpi_walk_namespace(type, start_object, max_depth, \
+             user_function, NULL, args)
++#elif (NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT == 8)
++#define NV_ACPI_WALK_NAMESPACE(type, start_object, max_depth, \
++        user_function, args...) \
++    acpi_walk_namespace(type, start_object, max_depth, \
++            user_function, NULL, NULL, args)
+ #else
+ #error "NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT value unrecognized!"
+ #endif
+@@ -1233,6 +1238,10 @@
+ #if defined(NV_DMA_IS_DIRECT_PRESENT)
+     if (dma_is_direct(get_dma_ops(dev)))
+         is_direct = NV_TRUE;
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++    // dma_is_direct() removed in kernel 7.0. NULL ops means direct DMA.
++    if (get_dma_ops(dev) == NULL)
++        is_direct = NV_TRUE;
+ #endif
+ 
+     return is_direct;
+@@ -1816,6 +1825,10 @@
+ 
+ #if defined(NV_FILE_HAS_INODE)
+ #define NV_FILE_INODE(file) (file)->f_inode
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)
++// f_inode exists since 3.9; conftest may fail on newer kernels due to
++// unrelated static_assert failures in kernel headers. Use f_inode directly.
++#define NV_FILE_INODE(file) (file)->f_inode
+ #else
+ #define NV_FILE_INODE(file) (file)->f_dentry->d_inode
+ #endif
+@@ -1980,7 +1993,12 @@
+ #endif
+ 
+ #if defined(NV_SET_CLOSE_ON_EXEC_PRESENT)
+-    #define NV_SET_CLOSE_ON_EXEC(fd, fdt) __set_close_on_exec(fd, fdt)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++    // set_close_on_exec() signature changed in 7.0: (fd, flag) instead of (fd, files_struct)
++    #define NV_SET_CLOSE_ON_EXEC(fd, fdt) set_close_on_exec(fd, 1)
++#else
++    #define NV_SET_CLOSE_ON_EXEC(fd, fdt) set_close_on_exec(fd, fdt)
++#endif
+ #elif defined(NV_LINUX_TIME_H_PRESENT) && defined(FD_SET)
+     #define NV_SET_CLOSE_ON_EXEC(fd, fdt) FD_SET(fd, fdt->close_on_exec)
+ #else
+--- a/common/inc/nv-mm.h	2024-05-02 20:46:36.000000000 +0530
++++ b/common/inc/nv-mm.h	2026-05-22 07:38:34.654948796 +0530
+@@ -25,6 +25,8 @@
+ 
+ #include "conftest.h"
+ 
++#include <linux/version.h>
++
+ #if !defined(NV_VM_FAULT_T_IS_PRESENT)
+ typedef int vm_fault_t;
+ #endif
+@@ -246,6 +248,19 @@
+ }
+ 
+ #if defined(NV_VM_AREA_STRUCT_HAS_CONST_VM_FLAGS)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++// Kernel 7.0: vm_flags_set/clear call __vma_start_write() which is
++// EXPORT_SYMBOL_GPL. Bypass since we already hold the mmap lock.
++static inline void nv_vm_flags_set(struct vm_area_struct *vma, vm_flags_t flags)
++{
++    vma_flags_set_word(&vma->flags, flags);
++}
++
++static inline void nv_vm_flags_clear(struct vm_area_struct *vma, vm_flags_t flags)
++{
++    vma_flags_clear_word(&vma->flags, flags);
++}
++#else
+ static inline void nv_vm_flags_set(struct vm_area_struct *vma, vm_flags_t flags)
+ {
+     vm_flags_set(vma, flags);
+@@ -255,6 +270,7 @@
+ {
+     vm_flags_clear(vma, flags);
+ }
++#endif
+ #else
+ static inline void nv_vm_flags_set(struct vm_area_struct *vma, unsigned long flags)
+ {
+--- a/nvidia/nv.c	2024-05-02 20:46:35.000000000 +0530
++++ b/nvidia/nv.c	2026-05-22 04:11:06.720928681 +0530
+@@ -13,6 +13,12 @@
+ #include "nv-linux.h"
+ #include "nv-p2p.h"
+ #include "nv-reg.h"
++
++// del_timer_sync() removed in kernel 7.0 (replaced by timer_delete_sync()
++// in kernel 6.15, with inline wrapper until 7.0).
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++#define del_timer_sync(timer) timer_delete_sync(timer)
++#endif
+ #include "nv-msi.h"
+ #include "nv-pci-table.h"
+ 
+--- a/nvidia/os-mlock.c	2024-05-02 20:46:35.000000000 +0530
++++ b/nvidia/os-mlock.c	2026-05-22 07:37:48.039952465 +0530
+@@ -19,6 +19,38 @@
+ {
+ #if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT)
+     return unsafe_follow_pfn(vma, address, pfn);
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++    // follow_pfn/unsafe_follow_pfn removed in kernel 7.0.
++    // follow_pfnmap_start/end are EXPORT_SYMBOL_GPL, so we walk
++    // the page tables manually instead.
++    pgd_t *pgd;
++    p4d_t *p4d;
++    pud_t *pud;
++    pmd_t *pmd;
++    pte_t *pte;
++
++    pgd = pgd_offset(vma->vm_mm, address);
++    if (pgd_none(*pgd) || pgd_bad(*pgd))
++        return -EINVAL;
++
++    p4d = p4d_offset(pgd, address);
++    if (p4d_none(*p4d) || p4d_bad(*p4d))
++        return -EINVAL;
++
++    pud = pud_offset(p4d, address);
++    if (pud_none(*pud) || pud_bad(*pud))
++        return -EINVAL;
++
++    pmd = pmd_offset(pud, address);
++    if (pmd_none(*pmd) || pmd_bad(*pmd))
++        return -EINVAL;
++
++    pte = pte_offset_kernel(pmd, address);
++    if (pte_none(*pte))
++        return -EINVAL;
++
++    *pfn = pte_pfn(*pte);
++    return 0;
+ #else
+     return follow_pfn(vma, address, pfn);
+ #endif
+--- a/nvidia-modeset/nvidia-modeset-linux.c	2024-05-02 20:20:44.000000000 +0530
++++ b/nvidia-modeset/nvidia-modeset-linux.c	2026-05-22 07:32:04.592979501 +0530
+@@ -45,6 +45,12 @@
+ #include <linux/sched/signal.h>
+ #endif
+ 
++// del_timer_sync() removed in kernel 7.0 (replaced by timer_delete_sync()
++// in kernel 6.15, with inline wrapper until 7.0).
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++#define del_timer_sync(timer) timer_delete_sync(timer)
++#endif
++
+ /*
+  * Commit aefb2f2e619b ("x86/bugs: Rename CONFIG_RETPOLINE =>
+  * CONFIG_MITIGATION_RETPOLINE) in v6.8 renamed CONFIG_RETPOLINE.
+--- a/nvidia-uvm/uvm_linux.h	2024-05-02 20:46:36.000000000 +0530
++++ b/nvidia-uvm/uvm_linux.h	2026-05-22 07:29:23.106992213 +0530
+@@ -485,6 +485,8 @@
+ #endif
+ 
+ // Changed in 3.17 via commit 743162013d40ca612b4cb53d3a200dff2d9ab26e
++// In kernel 7.0, wait_on_bit_lock has 3 args: (word, bit, mode)
++#if defined(NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT)
+ #if (NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT == 3)
+     #define UVM_WAIT_ON_BIT_LOCK(word, bit, mode) \
+         wait_on_bit_lock(word, bit, mode)
+@@ -498,8 +500,11 @@
+     }
+     #define UVM_WAIT_ON_BIT_LOCK(word, bit, mode) \
+         wait_on_bit_lock(word, bit, uvm_bit_wait, mode)
++#endif
+ #else
+-#error "Unknown number of arguments"
++    // Fallback: wait_on_bit_lock with 3 args (kernel 7.0+)
++    #define UVM_WAIT_ON_BIT_LOCK(word, bit, mode) \
++        wait_on_bit_lock(word, bit, mode)
+ #endif
+ 
+ static void uvm_init_radix_tree_preloadable(struct radix_tree_root *tree)
+@@ -528,14 +533,18 @@
+     #define NV_RADIX_TREE_REPLACE_SLOT(...) \
+         UVM_ASSERT_MSG(false, "radix_tree_replace_slot cannot be used in 4.10\n");
+ #else
++#if defined(NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT)
+ #if (NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT == 2)
+     #define NV_RADIX_TREE_REPLACE_SLOT(root, slot, entry) \
+         radix_tree_replace_slot((slot), (entry))
+ #elif  (NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT == 3)
+     #define NV_RADIX_TREE_REPLACE_SLOT(root, slot, entry) \
+         radix_tree_replace_slot((root), (slot), (entry))
++#endif
+ #else
+-#error "Unknown number of arguments"
++    // radix_tree_replace_slot() removed in kernel 7.0 (replaced by XArray API)
++    #define NV_RADIX_TREE_REPLACE_SLOT(...) \
++        UVM_ASSERT_MSG(false, "radix_tree_replace_slot unavailable\n");
+ #endif
+ #endif

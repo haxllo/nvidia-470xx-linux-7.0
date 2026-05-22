@@ -1,1 +1,0 @@
-#define NV_PNV_PCI_GET_NPU_DEV_PRESENT

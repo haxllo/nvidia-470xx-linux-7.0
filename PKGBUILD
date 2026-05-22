@@ -33,6 +33,7 @@ source=('nvidia-drm-outputclass.conf'
         "nvidia-470xx-fix-linux-6.17.patch"
         "nvidia-470xx-fix-linux-6.19-part1.patch"
         "nvidia-470xx-fix-linux-6.19-part2.patch"
+        "nvidia-470xx-fix-linux-7.0.patch"
         )
 
 sha512sums=('de7116c09f282a27920a1382df84aa86f559e537664bb30689605177ce37dc5067748acf9afd66a3269a6e323461356592fdfc624c86523bf105ff8fe47d3770'
@@ -90,6 +91,7 @@ prepare() {
     patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-6.17.patch"
     patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-6.19-part1.patch"
     patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-6.19-part2.patch"
+    patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-7.0.patch"
 
     sed -i "s/__VERSION_STRING/${pkgver}/" dkms.conf
     sed -i 's/__JOBS/`nproc`/' dkms.conf

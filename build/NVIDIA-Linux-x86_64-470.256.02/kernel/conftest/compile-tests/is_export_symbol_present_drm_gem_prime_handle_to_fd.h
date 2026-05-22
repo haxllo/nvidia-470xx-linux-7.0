@@ -1,1 +1,0 @@
-#define NV_IS_EXPORT_SYMBOL_PRESENT_drm_gem_prime_handle_to_fd 1
