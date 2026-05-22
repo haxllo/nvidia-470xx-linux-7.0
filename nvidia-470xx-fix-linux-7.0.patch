@@ -5,8 +5,9 @@ All changes against the original NVIDIA 470.256.02 source (from the official
 
 Covers:
   - Kbuild:               EXTRA_CFLAGS -> ccflags-y (removed in kernel 7.0)
-  - conftest.sh:          8-arg acpi_walk_namespace test; wait_on_bit_lock &
-                          radix_tree_replace_slot -> #undef instead of #error
+  - conftest.sh:          8-arg acpi_walk_namespace test; generate_version_overrides
+                          command that auto-corrects conftest results on kernel 7.0
+                          (static_assert in kernel headers breaks compile tests)
   - common/inc/nv-time.h: in_irq -> in_hardirq (>= 5.11)
   - common/inc/nv-linux.h: acpi_walk_namespace 8-arg variant; dma_is_direct
                           fallback for 7.0; f_inode fallback; set_close_on_exec
@@ -19,8 +20,11 @@ Covers:
   - nvidia-uvm/uvm_linux.h: wait_on_bit_lock & radix_tree_replace_slot
                           fallback with proper ifdef guards
 
+Conftest auto-correction (no manual overrides needed on kernel 7.0):
+  - generate_version_overrides reads LINUX_VERSION_CODE from kernel headers
+  - Corrects 19+ macros that compile tests wrongly detect due to static_assert
 --- a/Kbuild	2024-05-02 20:46:35.000000000 +0530
-+++ b/Kbuild	2026-05-22 03:35:01.815099099 +0530
++++ b/Kbuild	2026-05-22 09:10:00.602323034 +0530
 @@ -60,19 +60,17 @@
  
  
@@ -59,73 +63,21 @@ Covers:
  
  NV_CONFTEST_COMPILE_TEST_HEADERS := $(obj)/conftest/macros.h
  NV_CONFTEST_COMPILE_TEST_HEADERS += $(obj)/conftest/functions.h
---- a/conftest.sh	2024-05-02 19:55:33.000000000 +0530
-+++ b/conftest.sh	2026-05-22 04:06:52.908948660 +0530
-@@ -760,7 +760,25 @@
-             # Seventh parameter added by commit 2263576cfc6e
-             # ("ACPICA: Add post-order callback to acpi_walk_namespace")
-             # in v2.6.33
-+            # Eighth parameter added in v7.0 (return_value pointer)
-             #
-+
-+            echo "$CONFTEST_PREAMBLE
-+            #include <linux/acpi.h>
-+            void conftest_acpi_walk_namespace(void) {
-+                acpi_walk_namespace(0, NULL, 0, NULL, NULL, NULL, NULL, NULL);
-+            }" > conftest$$.c
-+
-+            $CC $CFLAGS -c conftest$$.c > /dev/null 2>&1
-+            rm -f conftest$$.c
-+
-+            if [ -f conftest$$.o ]; then
-+                rm -f conftest$$.o
-+                echo "#define NV_ACPI_WALK_NAMESPACE_PRESENT" | append_conftest "functions"
-+                echo "#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 8" | append_conftest "functions"
-+                return
-+            fi
-+
-             echo "$CONFTEST_PREAMBLE
-             #include <linux/acpi.h>
-             void conftest_acpi_walk_namespace(void) {
-@@ -2394,7 +2412,7 @@
-                 echo "#define NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT 4" | append_conftest "functions"
-                 return
-             fi
--            echo "#error wait_on_bit_lock() conftest failed!" | append_conftest "functions"
-+            echo "#undef NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT" | append_conftest "functions"
-         ;;
+@@ -157,7 +155,11 @@
+ NV_CONFTEST_SYMBOL_COMPILE_TESTS ?=
+ NV_CONFTEST_TYPE_COMPILE_TESTS ?=
  
-         bitmap_clear)
-@@ -3333,7 +3351,7 @@
-                 echo "#define NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT 3" | append_conftest "functions"
-                 return
-             else
--                echo "#error radix_tree_replace_slot() conftest failed!" | append_conftest "functions"
-+                echo "#undef NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT" | append_conftest "functions"
-             fi
-         ;;
- 
---- a/common/inc/nv-time.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/common/inc/nv-time.h	2026-05-22 05:19:09.818607265 +0530
-@@ -28,9 +28,16 @@
- #include <linux/delay.h>
- #include <linux/interrupt.h>
- #include <linux/ktime.h>
-+#include <linux/version.h>
- 
- #include <nvstatus.h>
- 
-+// in_irq() removed in kernel 5.11 (treewide: Remove in_irq()).
-+// Replace with in_hardirq() which is the correct modern equivalent.
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
-+#define in_irq in_hardirq
-+#endif
+-$(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,functions,$(NV_CONFTEST_FUNCTION_COMPILE_TESTS)))
++$(obj)/conftest/functions.h: $(addprefix $(obj)/conftest/compile-tests/,$(addsuffix .h,$(NV_CONFTEST_FUNCTION_COMPILE_TESTS)))
++	@mkdir -p $(obj)/conftest
++	@cat $^ /dev/null > $@
++	@$(NV_CONFTEST_CMD) generate_version_overrides >> $@
 +
- #define NV_MAX_ISR_DELAY_US           20000
- #define NV_MAX_ISR_DELAY_MS           (NV_MAX_ISR_DELAY_US / 1000)
- #define NV_NSECS_TO_JIFFIES(nsec)     ((nsec) * HZ / 1000000000)
+ $(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,generic,$(NV_CONFTEST_GENERIC_COMPILE_TESTS)))
+ $(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,macros,$(NV_CONFTEST_MACRO_COMPILE_TESTS)))
+ $(eval $(call NV_GENERATE_COMPILE_TEST_HEADER,symbols,$(NV_CONFTEST_SYMBOL_COMPILE_TESTS)))
 --- a/common/inc/nv-linux.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/common/inc/nv-linux.h	2026-05-22 06:19:37.701321683 +0530
++++ b/common/inc/nv-linux.h	2026-05-22 09:06:10.266788371 +0530
 @@ -335,6 +335,11 @@
          user_function, args...) \
      acpi_walk_namespace(type, start_object, max_depth, \
@@ -175,7 +127,7 @@ Covers:
      #define NV_SET_CLOSE_ON_EXEC(fd, fdt) FD_SET(fd, fdt->close_on_exec)
  #else
 --- a/common/inc/nv-mm.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/common/inc/nv-mm.h	2026-05-22 07:38:34.654948796 +0530
++++ b/common/inc/nv-mm.h	2026-05-22 09:06:10.266923501 +0530
 @@ -25,6 +25,8 @@
  
  #include "conftest.h"
@@ -213,8 +165,130 @@ Covers:
  #else
  static inline void nv_vm_flags_set(struct vm_area_struct *vma, unsigned long flags)
  {
+--- a/common/inc/nv-time.h	2024-05-02 20:46:36.000000000 +0530
++++ b/common/inc/nv-time.h	2026-05-22 09:06:10.266667061 +0530
+@@ -28,9 +28,16 @@
+ #include <linux/delay.h>
+ #include <linux/interrupt.h>
+ #include <linux/ktime.h>
++#include <linux/version.h>
+ 
+ #include <nvstatus.h>
+ 
++// in_irq() removed in kernel 5.11 (treewide: Remove in_irq()).
++// Replace with in_hardirq() which is the correct modern equivalent.
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
++#define in_irq in_hardirq
++#endif
++
+ #define NV_MAX_ISR_DELAY_US           20000
+ #define NV_MAX_ISR_DELAY_MS           (NV_MAX_ISR_DELAY_US / 1000)
+ #define NV_NSECS_TO_JIFFIES(nsec)     ((nsec) * HZ / 1000000000)
+--- a/conftest.sh	2024-05-02 19:55:33.000000000 +0530
++++ b/conftest.sh	2026-05-22 09:09:42.343322164 +0530
+@@ -760,7 +760,25 @@
+             # Seventh parameter added by commit 2263576cfc6e
+             # ("ACPICA: Add post-order callback to acpi_walk_namespace")
+             # in v2.6.33
++            # Eighth parameter added in v7.0 (return_value pointer)
+             #
++
++            echo "$CONFTEST_PREAMBLE
++            #include <linux/acpi.h>
++            void conftest_acpi_walk_namespace(void) {
++                acpi_walk_namespace(0, NULL, 0, NULL, NULL, NULL, NULL, NULL);
++            }" > conftest$$.c
++
++            $CC $CFLAGS -c conftest$$.c > /dev/null 2>&1
++            rm -f conftest$$.c
++
++            if [ -f conftest$$.o ]; then
++                rm -f conftest$$.o
++                echo "#define NV_ACPI_WALK_NAMESPACE_PRESENT" | append_conftest "functions"
++                echo "#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 8" | append_conftest "functions"
++                return
++            fi
++
+             echo "$CONFTEST_PREAMBLE
+             #include <linux/acpi.h>
+             void conftest_acpi_walk_namespace(void) {
+@@ -2394,7 +2412,7 @@
+                 echo "#define NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT 4" | append_conftest "functions"
+                 return
+             fi
+-            echo "#error wait_on_bit_lock() conftest failed!" | append_conftest "functions"
++            echo "#undef NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT" | append_conftest "functions"
+         ;;
+ 
+         bitmap_clear)
+@@ -3333,7 +3351,7 @@
+                 echo "#define NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT 3" | append_conftest "functions"
+                 return
+             else
+-                echo "#error radix_tree_replace_slot() conftest failed!" | append_conftest "functions"
++                echo "#undef NV_RADIX_TREE_REPLACE_SLOT_ARGUMENT_COUNT" | append_conftest "functions"
+             fi
+         ;;
+ 
+@@ -5501,4 +5519,56 @@
+ 
+         exit 1
+     ;;
++
++    generate_version_overrides)
++        #
++        # Kernel 7.0+ headers contain static_assert that breaks conftest.sh
++        # compile tests, producing wrong #undef results. This command
++        # corrects known-bad results based on kernel version.
++        #
++
++        if [ -f "$OUTPUT/include/generated/uapi/linux/version.h" ]; then
++            KVER=$(grep -o 'LINUX_VERSION_CODE[[:space:]]*[0-9]*' \
++                "$OUTPUT/include/generated/uapi/linux/version.h" 2>/dev/null | \
++                grep -o '[0-9]*$')
++        else
++            KVER=0
++        fi
++        [ -z "$KVER" ] && KVER=0
++
++        # LINUX_VERSION_CODE >= 7.0.0 = (7 << 16) | (0 << 8) | 0 = 458752
++        if [ "$KVER" -ge 458752 ]; then
++            # APIs that still exist but conftest wrongly #undefs (compile
++            # tests fail due to static_assert in kernel headers)
++            echo "#define NV_FILE_HAS_INODE"
++            echo "#define NV_KUID_T_PRESENT"
++            echo "#define NV_VM_FAULT_HAS_ADDRESS"
++            echo "#define NV_VM_FAULT_T_IS_PRESENT"
++            echo "#define NV_MM_HAS_MMAP_LOCK"
++            echo "#define NV_PROC_OPS_PRESENT"
++            echo "#define NV_TIMESPEC64_PRESENT"
++            echo "#define NV_VM_AREA_STRUCT_HAS_CONST_VM_FLAGS"
++            echo "#define NV_VM_OPS_FAULT_REMOVED_VMA_ARG"
++            echo "#define NV_EFI_ENABLED_ARGUMENT_COUNT 1"
++            echo "#define NV_FULL_NAME_HASH_ARGUMENT_COUNT 3"
++            echo "#define NV_GET_USER_PAGES_REMOTE_PRESENT"
++            echo "#define NV_GET_USER_PAGES_REMOTE_HAS_ARGS_FLAGS_LOCKED"
++            echo "#define NV_GET_USER_PAGES_HAS_ARGS_FLAGS"
++            echo "#define NV_KERNEL_WRITE_HAS_POINTER_POS_ARG"
++            echo "#define NV_KERNEL_READ_HAS_POINTER_POS_ARG"
++
++            # APIs removed in 7.0 but conftest wrongly #defines (compile
++            # tests produce false positives)
++            echo "#undef NV_SET_CLOSE_ON_EXEC_PRESENT"
++            echo "#undef NV_ACPI_BUS_GET_DEVICE_PRESENT"
++            echo "#undef NV_PHYS_TO_DMA_PRESENT"
++            echo "#undef NV_DMA_IS_DIRECT_PRESENT"
++            echo "#undef NV_DMA_MAP_RESOURCE_PRESENT"
++            echo "#undef NV_SET_MEMORY_ARRAY_UC_PRESENT"
++            echo "#undef NV_JIFFIES_TO_TIMESPEC_PRESENT"
++            echo "#undef NV_ACQUIRE_CONSOLE_SEM_PRESENT"
++            echo "#undef NV_UNSAFE_FOLLOW_PFN_PRESENT"
++        fi
++        exit 0
++    ;;
+ esac
 --- a/nvidia/nv.c	2024-05-02 20:46:35.000000000 +0530
-+++ b/nvidia/nv.c	2026-05-22 04:11:06.720928681 +0530
++++ b/nvidia/nv.c	2026-05-22 09:06:10.267173821 +0530
 @@ -13,6 +13,12 @@
  #include "nv-linux.h"
  #include "nv-p2p.h"
@@ -229,7 +303,7 @@ Covers:
  #include "nv-pci-table.h"
  
 --- a/nvidia/os-mlock.c	2024-05-02 20:46:35.000000000 +0530
-+++ b/nvidia/os-mlock.c	2026-05-22 07:37:48.039952465 +0530
++++ b/nvidia/os-mlock.c	2026-05-22 09:06:10.267441511 +0530
 @@ -19,6 +19,38 @@
  {
  #if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT)
@@ -270,7 +344,7 @@ Covers:
      return follow_pfn(vma, address, pfn);
  #endif
 --- a/nvidia-modeset/nvidia-modeset-linux.c	2024-05-02 20:20:44.000000000 +0530
-+++ b/nvidia-modeset/nvidia-modeset-linux.c	2026-05-22 07:32:04.592979501 +0530
++++ b/nvidia-modeset/nvidia-modeset-linux.c	2026-05-22 09:06:10.267533431 +0530
 @@ -45,6 +45,12 @@
  #include <linux/sched/signal.h>
  #endif
@@ -285,7 +359,7 @@ Covers:
   * Commit aefb2f2e619b ("x86/bugs: Rename CONFIG_RETPOLINE =>
   * CONFIG_MITIGATION_RETPOLINE) in v6.8 renamed CONFIG_RETPOLINE.
 --- a/nvidia-uvm/uvm_linux.h	2024-05-02 20:46:36.000000000 +0530
-+++ b/nvidia-uvm/uvm_linux.h	2026-05-22 07:29:23.106992213 +0530
++++ b/nvidia-uvm/uvm_linux.h	2026-05-22 09:06:10.267650331 +0530
 @@ -485,6 +485,8 @@
  #endif
  
@@ -327,3 +401,4 @@ Covers:
 +        UVM_ASSERT_MSG(false, "radix_tree_replace_slot unavailable\n");
  #endif
  #endif
+ 

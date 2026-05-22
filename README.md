@@ -27,43 +27,11 @@ cd NVIDIA-Linux-x86_64-470.256.02/kernel
 patch -p1 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
 ```
 
-### 3. Fix conftest results
+### 3. Build
 
-The conftest.sh compile tests fail on kernel 7.0 because `static_assert` in kernel headers causes false negatives. You need to manually correct the results.
+The patch includes an automatic conftest fix (`generate_version_overrides` command) that reads your kernel version and corrects any wrong results caused by `static_assert` in kernel 7.0+ headers. No manual intervention needed.
 
-**Key manual overrides in `conftest/functions.h`:**
-
-```c
-// Fixes (changed from #undef to #define):
-#define NV_FILE_HAS_INODE                       // f_inode exists
-#define NV_KUID_T_PRESENT                       // kuid_t exists
-#define NV_VM_FAULT_HAS_ADDRESS                 // vm_fault.address
-#define NV_VM_FAULT_T_IS_PRESENT                // vm_fault_t
-#define NV_MM_HAS_MMAP_LOCK                     // mmap_lock
-#define NV_PROC_OPS_PRESENT                     // proc_ops
-#define NV_TIMESPEC64_PRESENT                   // timespec64
-#define NV_VM_AREA_STRUCT_HAS_CONST_VM_FLAGS    // const vm_flags
-#define NV_VM_OPS_FAULT_REMOVED_VMA_ARG         // vma arg removed in 4.17
-#define NV_EFI_ENABLED_ARGUMENT_COUNT 1
-#define NV_FULL_NAME_HASH_ARGUMENT_COUNT 3
-#define NV_WAIT_ON_BIT_LOCK_ARGUMENT_COUNT 3   // 3-arg version in 7.0
-#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 7
-#define NV_GET_USER_PAGES_REMOTE_PRESENT
-#define NV_GET_USER_PAGES_REMOTE_HAS_ARGS_FLAGS_LOCKED  // 6-arg version
-
-// Removed in 7.0 (changed from #define to #undef):
-#undef NV_SET_CLOSE_ON_EXEC_PRESENT      // not exported
-#undef NV_ACPI_BUS_GET_DEVICE_PRESENT
-#undef NV_PHYS_TO_DMA_PRESENT
-#undef NV_DMA_IS_DIRECT_PRESENT
-#undef NV_DMA_MAP_RESOURCE_PRESENT
-#undef NV_SET_MEMORY_ARRAY_UC_PRESENT
-#undef NV_JIFFIES_TO_TIMESPEC_PRESENT
-#undef NV_ACQUIRE_CONSOLE_SEM_PRESENT
-#undef NV_UNSAFE_FOLLOW_PFN_PRESENT
-```
-
-### 4. Build
+### 4. Install kernel modules
 
 ```bash
 SYSSRC=/usr/lib/modules/$(uname -r)/build make modules
@@ -206,7 +174,7 @@ glxinfo | grep "OpenGL vendor"
 
 ### conftest.sh fails
 
-This is the most common issue. The compile tests in conftest.sh fail on kernel 7.0+ because kernel headers contain `static_assert` that breaks the test compilations. See the "Fix conftest results" section above for the required manual overrides.
+The patch includes an automatic fix — `generate_version_overrides` in conftest.sh reads `LINUX_VERSION_CODE` and corrects known-wrong results on kernel 7.0+. If you see unexpected build errors, check if `conftest/functions.h` has `#undef` for APIs that should exist (e.g., `NV_FILE_HAS_INODE`). On kernel 7.0+, the fix is automatic.
 
 ### GPL-only symbol errors on module load
 

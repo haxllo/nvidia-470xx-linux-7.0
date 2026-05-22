@@ -27,7 +27,7 @@
 - Kernel modules autoloaded at boot
 
 ## Kernel 7.0 Incompatibilities Fixed
-1. **conftest.sh fails** — `static_assert` in kernel headers breaks compile tests; manual conftest results required
+1. **conftest.sh fails** — `static_assert` in kernel headers breaks compile tests; auto-corrected via `generate_version_overrides` command
 2. **EXTRA_CFLAGS removed** — replaced with `ccflags-y`
 3. **`__vma_start_write` (EXPORT_SYMBOL_GPL)** — bypassed via direct `vma_flags_set_word`/`vma_flags_clear_word`
 4. **`follow_pfnmap_start/end` (EXPORT_SYMBOL_GPL)** — replaced with manual x86 page table walk
