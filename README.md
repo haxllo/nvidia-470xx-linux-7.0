@@ -45,7 +45,7 @@ sudo depmod -a
 ```
 
 > [!TIP]
-> The patch includes `generate_version_overrides` which reads `LINUX_VERSION_CODE` from your kernel headers and auto-corrects macro detection. No manual overrides needed on kernel 7.0.
+> The patch includes `generate_version_overrides` which reads `LINUX_VERSION_CODE` from your kernel headers and auto-corrects macro detection. No manual overrides needed on kernel 7.0. Override results are stored in `conftest/overrides.h` and included last in the conftest chain to prevent other generated files from undoing them.
 
 ## Full installation
 
@@ -100,7 +100,7 @@ glxinfo | grep "OpenGL vendor"
 
 NVIDIA's driver build uses `conftest.sh` to probe the kernel API by compiling small C programs. On kernel 7.0, `static_assert` in kernel headers causes these probes to fail silently, producing wrong `#undef` results. The patch addresses four categories of breakage:
 
-1. **Conftest auto-correction** — `generate_version_overrides` reads `LINUX_VERSION_CODE` and overrides 19+ wrongly detected macros
+1. **Conftest auto-correction** — `generate_version_overrides` reads `LINUX_VERSION_CODE` and overrides 20+ wrongly detected macros
 2. **Build system** — `EXTRA_CFLAGS` removed in kernel 7.0; replaced with `ccflags-y`
 3. **GPL-only symbols** — `__vma_start_write`, `follow_pfnmap_start/end`, `set_close_on_exec` went GPL; bypassed with direct equivalents
 4. **Removed APIs** — `del_timer_sync` → `timer_delete_sync`, `in_irq` → `in_hardirq`, `follow_pfn` → manual page table walk
@@ -134,7 +134,7 @@ Ensure `depmod -a` was run after `make modules_install` and that `/usr/lib/modul
 
 | File | Patch |
 |---|---|
-| `nvidia-470xx-fix-linux-7.0.patch` | Unified patch (9 files, 404 lines) for kernel 7.0 |
+| `nvidia-470xx-fix-linux-7.0.patch` | Unified patch (12 files, 416 lines) for kernel 7.0 |
 | `nvidia-470xx-fix-linux-6.13.patch` through `6.19-part2.patch` | Patches for earlier kernels |
 | `nvidia-470xx-fix-gcc-15.patch` | Fix for GCC 15 compatibility |
 | `0001-0003-conftest-fix.patches` | Conftest cross-distribution fixes |
