@@ -3,8 +3,8 @@
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue?style=flat-square)](LICENSE)
 [![Kernel](https://img.shields.io/badge/Kernel-7.0.9-blue?style=flat-square)](#)
 [![Driver](https://img.shields.io/badge/Driver-470.256.02-76b900?style=flat-square)](#)
-[![Release](https://img.shields.io/github/v/release/haxllo/nvidia-470xx-linux-7.0?style=flat-square)](https://github.com/haxllo/nvidia-470xx-linux-7.0/releases/latest)
-
+[![Stars](https://img.shields.io/github/stars/haxllo/nvidia-470xx-linux-7.0?style=flat-square&cacheSeconds=60)](https://github.com/haxllo/nvidia-470xx-linux-7.0/stargazers)
+[![Release](https://img.shields.io/github/v/release/haxllo/nvidia-470xx-linux-7.0?style=flat-square&cacheSeconds=60)](https://github.com/haxllo/nvidia-470xx-linux-7.0/releases/latest)
 > Build and install NVIDIA 470.256.02 (the final Kepler-supporting driver) on Linux kernel 7.0 — for any distribution.
 
 GeForce GT/GTX 6xx/7xx (Kepler) owners have been stuck since NVIDIA dropped support after driver 470. This patch gets that driver compiling and running on kernel 7.0.
