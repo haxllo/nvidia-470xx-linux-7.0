@@ -29,12 +29,13 @@ GeForce GT/GTX 6xx/7xx (Kepler) owners have been stuck since NVIDIA dropped supp
 # 1. Download and extract the NVIDIA driver
 wget https://us.download.nvidia.com/XFree86/Linux-x86_64/470.256.02/NVIDIA-Linux-x86_64-470.256.02.run
 sh NVIDIA-Linux-x86_64-470.256.02.run --extract-only
-cd NVIDIA-Linux-x86_64-470.256.02/kernel
+cd NVIDIA-Linux-x86_64-470.256.02
 
 # 2. Apply the patch
-patch -p1 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
+patch -p3 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
 
 # 3. Build kernel modules
+cd kernel
 make modules
 
 # 4. Install modules
