@@ -34,17 +34,22 @@ cd NVIDIA-Linux-x86_64-470.256.02
 # 2. Apply the patch
 patch -p3 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
 
-# 3. Build kernel modules
+# 3. Recommended: build and install the complete patched driver
+sudo ./nvidia-installer
+
+# Alternative: build kernel modules manually instead of using nvidia-installer
 cd kernel
 make modules
 
-# 4. Install modules
+# Install modules
 sudo make modules_install
 sudo depmod -a
 
-# 5. Install userspace libraries
+# Install userspace libraries
 # See "Full installation" below
 ```
+
+`nvidia-installer` builds from the patched `kernel/` directory and installs the driver components, including userspace libraries and utilities. Use either the recommended installer command or the manual alternative below it, not both.
 
 > [!TIP]
 > The patch includes `generate_version_overrides` which reads `LINUX_VERSION_CODE` from your kernel headers and auto-corrects macro detection. No manual overrides needed on kernel 7.0. Override results are stored in `conftest/overrides.h` and included last in the conftest chain to prevent other generated files from undoing them.
