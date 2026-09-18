@@ -36,8 +36,15 @@ patch -p3 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
 
 # 3. Recommended: build and install the complete patched driver
 sudo ./nvidia-installer
+```
 
-# Alternative: build kernel modules manually instead of using nvidia-installer
+`nvidia-installer` builds from the patched `kernel/` directory and installs the driver components, including userspace libraries and utilities.
+
+### Manual module installation (alternative)
+
+Use these commands instead of `nvidia-installer` only when you intend to install the userspace components manually.
+
+```bash
 cd kernel
 make modules
 
@@ -49,8 +56,6 @@ sudo depmod -a
 # See "Full installation" below
 ```
 
-`nvidia-installer` builds from the patched `kernel/` directory and installs the driver components, including userspace libraries and utilities. Use either the recommended installer command or the manual alternative below it, not both.
-
 > [!TIP]
 > The patch includes `generate_version_overrides` which reads `LINUX_VERSION_CODE` from your kernel headers and auto-corrects macro detection. No manual overrides needed on kernel 7.0. Override results are stored in `conftest/overrides.h` and included last in the conftest chain to prevent other generated files from undoing them.
 
@@ -58,7 +63,7 @@ sudo depmod -a
 
 ### Userspace libraries
 
-The extracted driver directory (`NVIDIA-Linux-x86_64-470.256.02/`) contains all the `.so` libraries, Xorg driver, Vulkan ICD, OpenCL, and binaries. The [PKGBUILD](PKGBUILD) lists every file with its install location — reference it regardless of your distro.
+The extracted driver directory (`NVIDIA-Linux-x86_64-470.256.02/`) contains all the `.so` libraries, Xorg driver, Vulkan ICD, OpenCL, and binaries. The [PKGBUILD](PKGBUILD) shows many Arch-specific install locations; use it as a reference when completing the manual alternative.
 
 **Key files to install:**
 
@@ -74,11 +79,18 @@ The extracted driver directory (`NVIDIA-Linux-x86_64-470.256.02/`) contains all 
 | nvidia-smi | `nvidia-smi`, `nvidia-modprobe`, `nvidia-xconfig`, `nvidia-persistenced` |
 | OpenCL | `libnvidia-opencl.so.470.256.02`, `nvidia.icd` |
 
-### Post-install config
+### System configuration
+
+Before either installation path, blacklist Nouveau, regenerate your distribution's initramfs if required, and stop the graphical session. The remaining configuration can be applied after installation.
 
 ```bash
-# Blacklist nouveau
+# Blacklist Nouveau before installation
 echo "blacklist nouveau" | sudo tee /usr/lib/modprobe.d/nvidia-470xx.conf
+```
+
+After installation:
+
+```bash
 
 # Autoload modules at boot
 printf "nvidia-uvm\nnvidia-modeset\nnvidia-drm\n" | sudo tee /usr/lib/modules-load.d/nvidia-470xx.conf
@@ -145,7 +157,7 @@ Ensure `depmod -a` was run after `make modules_install` and that `/usr/lib/modul
 | `nvidia-470xx-fix-linux-6.13.patch` through `6.19-part2.patch` | Patches for earlier kernels |
 | `nvidia-470xx-fix-gcc-15.patch` | Fix for GCC 15 compatibility |
 | `0001-0003-conftest-fix.patches` | Conftest cross-distribution fixes |
-| `PKGBUILD` | AUR packaging (update `sha512sums` before use) |
+| `PKGBUILD` | Arch packaging reference; companion packaging files are required to build it |
 
 ## Changelog
 
