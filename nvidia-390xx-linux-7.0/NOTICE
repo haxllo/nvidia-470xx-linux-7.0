@@ -1,0 +1,9 @@
+This repository contains GPL-2.0-only documentation and helper scripts.
+
+NVIDIA's 390.157 driver source and installer are not included. They must be
+downloaded from NVIDIA and remain subject to NVIDIA's license.
+
+The helper script downloads, but does not redistribute, compatibility patches
+from the Arch User Repository's nvidia-390xx-utils package. Patch authors and
+their provenance are recorded by that package's PKGBUILD. Those patches retain
+their respective licensing terms.
