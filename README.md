@@ -12,9 +12,9 @@ GeForce GT/GTX 6xx/7xx (Kepler) owners have been stuck since NVIDIA dropped supp
 ## Features
 
 - All 5 kernel modules compile with zero errors: `nvidia`, `nvidia-uvm`, `nvidia-modeset`, `nvidia-drm`, `nvidia-peermem`
-- Automatic conftest correction — no manual macro overrides needed
+- Conftest probes detect the kernel correctly on 7.0, so no macro overrides are needed
 - Xorg, OpenGL, CUDA 11.4, Vulkan, VDPAU, NVENC/NVDEC all functional
-- Single unified patch, works on any distro
+- The AUR patch series plus one small patch for 7.0; works on any distro, including Ubuntu's DKMS packages
 
 ## Prerequisites
 
@@ -31,9 +31,27 @@ wget https://us.download.nvidia.com/XFree86/Linux-x86_64/470.256.02/NVIDIA-Linux
 sh NVIDIA-Linux-x86_64-470.256.02.run --extract-only
 cd NVIDIA-Linux-x86_64-470.256.02
 
-# 2. Apply the patch
-patch -p3 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
-
+# 2. Apply the patches, in this order, from the driver's kernel/ directory
+PATCHES=/path/to/nvidia-470xx-linux-7.0
+cd kernel
+for p in \
+    0001-Fix-conftest-to-ignore-implicit-function-declaration.patch \
+    0002-Fix-conftest-to-use-a-short-wchar_t.patch \
+    0003-Fix-conftest-to-use-nv_drm_gem_vmap-which-has-the-se.patch \
+    nvidia-470xx-fix-gcc-15.patch \
+    kernel-6.10.patch \
+    kernel-6.12.patch \
+    nvidia-470xx-fix-linux-6.13.patch \
+    nvidia-470xx-fix-linux-6.14.patch \
+    nvidia-470xx-fix-linux-6.15.patch \
+    nvidia-470xx-fix-linux-6.17.patch \
+    nvidia-470xx-fix-linux-6.19-part1.patch \
+    nvidia-470xx-fix-linux-6.19-part2.patch \
+    nvidia-470xx-fix-linux-7.0-dma-fence.patch
+do
+    patch -p1 -i "$PATCHES/$p" || { echo "FAILED: $p"; break; }
+done
+cd ..
 
 # 3. Recommended: build and install the complete patched driver
 sudo ./nvidia-installer
@@ -58,7 +76,7 @@ sudo depmod -a
 ```
 
 > [!TIP]
-> The patch includes `generate_version_overrides` which reads `LINUX_VERSION_CODE` from your kernel headers and auto-corrects macro detection. No manual overrides needed on kernel 7.0. Override results are stored in `conftest/overrides.h` and included last in the conftest chain to prevent other generated files from undoing them.
+> The order matters: each patch expects the ones before it. The [PKGBUILD](PKGBUILD) applies the same list in the same order. On Ubuntu, `/usr/src/nvidia-470.256.02` (from `nvidia-kernel-source-470`) is the same `kernel/` directory apart from `dkms.conf`, so you can apply the patches there and run `sudo dkms install nvidia/470.256.02 -k $(uname -r)` instead of `nvidia-installer`, which keeps the userspace libraries apt installed.
 
 ## Full installation
 
@@ -117,24 +135,28 @@ glxinfo | grep "OpenGL vendor"
 
 ## How it works
 
-NVIDIA's driver build uses `conftest.sh` to probe the kernel API by compiling small C programs. On kernel 7.0, `static_assert` in kernel headers causes these probes to fail silently, producing wrong `#undef` results. The patch addresses four categories of breakage:
+NVIDIA's driver build uses `conftest.sh` to probe the kernel API by compiling small C programs. Since 6.19 the kernel builds with `-fms-extensions`, and `include/linux/fs.h` relies on it: `struct filename` embeds an anonymous `struct __filename_head`. Without the flag, GCC drops that member, the `static_assert(sizeof(struct filename) % 64 == 0)` in the same header fails in every probe that includes it, and the probes report wrong results. `nvidia-470xx-fix-linux-6.19-part2.patch` adds the flag to the probes, so they detect the kernel correctly.
 
-1. **Conftest auto-correction** — `generate_version_overrides` reads `LINUX_VERSION_CODE` and overrides 20+ wrongly detected macros
-2. **Build system** — `EXTRA_CFLAGS` removed in kernel 7.0; replaced with `ccflags-y`
-3. **GPL-only symbols** — `__vma_start_write`, `follow_pfnmap_start/end`, `set_close_on_exec` went GPL; bypassed with direct equivalents
-4. **Removed APIs** — `del_timer_sync` → `timer_delete_sync`, `in_irq` → `in_hardirq`, `follow_pfn` → manual page table walk
+The patches address:
 
-All source changes are in a single unified patch against the driver's `kernel/` directory.
+1. **Conftest** — the 0001–0003 patches and `-fms-extensions` (6.19-part2)
+2. **Build system** — `EXTRA_CFLAGS` removed by the kernel; replaced with `ccflags-y`
+3. **Kernel API changes from 6.10 to 6.19** — one patch per kernel release, from the AUR `nvidia-470xx-utils` package
+4. **Kernel 7.0** — `dma_fence_signal()` now returns `void` (`nvidia-470xx-fix-linux-7.0-dma-fence.patch`)
+
+All patches apply to the driver's `kernel/` directory with `patch -p1`.
+
+`nvidia-470xx-fix-linux-7.0.patch` is the earlier single patch against the unpatched driver. It works around the wrong probe results with `generate_version_overrides`, which reads `LINUX_VERSION_CODE` and overrides 20+ macros. It changes the same lines as the series, so apply one or the other, not both.
 
 ## Troubleshooting
 
-### conftest.sh auto-correction not working
+### A patch fails to apply
 
-Check `conftest/functions.h` after building. If macros like `NV_FILE_HAS_INODE` show `#undef` on kernel 7.0, the version detection failed. Verify your kernel headers have `include/generated/uapi/linux/version.h`.
+Start from a freshly extracted driver and apply the patches from its `kernel/` directory, in the order shown in the quick start. `nvidia-470xx-fix-linux-7.0.patch` cannot be combined with the series.
 
 ### Module load fails: unknown symbol
 
-The patch handles all known GPL-only symbol issues. If you see new ones, check `dmesg` for the symbol name — it may need a similar workaround.
+The patches handle all known GPL-only symbol issues. If you see new ones, check `dmesg` for the symbol name — it may need a similar workaround.
 
 ### picom compositor freezing
 
@@ -153,8 +175,9 @@ Ensure `depmod -a` was run after `make modules_install` and that `/usr/lib/modul
 
 | File | Patch |
 |---|---|
-| `nvidia-470xx-fix-linux-7.0.patch` | Unified patch (12 files, 416 lines) for kernel 7.0 |
-| `nvidia-470xx-fix-linux-6.13.patch` through `6.19-part2.patch` | Patches for earlier kernels |
+| `nvidia-470xx-fix-linux-7.0-dma-fence.patch` | Kernel 7.0: `dma_fence_signal()` returns `void` |
+| `kernel-6.10.patch`, `kernel-6.12.patch`, `nvidia-470xx-fix-linux-6.13.patch` through `6.19-part2.patch` | Patches for earlier kernels |
+| `nvidia-470xx-fix-linux-7.0.patch` | Earlier single patch (12 files, 416 lines) against the unpatched driver; not combinable with the series |
 | `nvidia-470xx-fix-gcc-15.patch` | Fix for GCC 15 compatibility |
 | `0001-0003-conftest-fix.patches` | Conftest cross-distribution fixes |
 | `PKGBUILD` | Arch packaging reference; companion packaging files are required to build it |
