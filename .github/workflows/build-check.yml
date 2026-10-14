@@ -200,3 +200,13 @@ jobs:
             /tmp/build-*.log
             /tmp/ko-*.txt
           retention-days: 7
+
+      - name: Confirm routeA fails the known way
+        if: always() && matrix.route == 'routeA'
+        run: |
+          if grep -q "drm_gem_object_put_unlocked" /tmp/build-routeA.log 2>/dev/null; then
+            echo "EXPECTED: routeA fails on HWE (issue #7). See README Method A scope."
+          else
+            echo "UNEXPECTED: routeA result changed (new error, or it passes now) — investigate!"
+            echo "### :warning: routeA result changed — investigate" >> "$GITHUB_STEP_SUMMARY"
+          fi
