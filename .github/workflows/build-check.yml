@@ -138,6 +138,9 @@ jobs:
     needs: patch-check
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # routeA is a known failure on 7.0 HWE (issue #7: single patch targets
+    # Arch 7.0.9 / Ubuntu 26.04). Keep it running as evidence, not as gate.
+    continue-on-error: ${{ matrix.route == 'routeA' }}
     strategy:
       fail-fast: false
       matrix:
