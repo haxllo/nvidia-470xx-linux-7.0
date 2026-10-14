@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Success report
+    url: https://github.com/haxllo/nvidia-470xx-linux-7.0/issues/new?title=%5Bworks%5D%3A+&body=%2A%2A GPU%3A%2A%2A%0A%2A%2A Kernel (`uname -r`)%3A%2A%2A%0A%2A%2A Distro%3A%2A%2A%0A%2A%2A Method (A%2FB)%3A%2A%2A%0A%2A%2A `nvidia-smi` output%3A%2A%2A
+    about: Report a working setup (helps list tested hardware)

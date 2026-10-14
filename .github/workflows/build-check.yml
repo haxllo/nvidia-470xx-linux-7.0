@@ -1,0 +1,196 @@
+name: build-check
+
+# Why this exists: issue #7 says the single 7.0 patch builds 0 modules on
+# Ubuntu 24.04 HWE (7.0.0-38) and conflicts with the series, while issues
+# #1/#2 + PROGRESS.md report the single patch works (Arch 7.0.9, GT 720 /
+# GTX 660). So test BOTH routes on every push/PR and report, don't pick a
+# winner blindly. Compile-only: no GPU/modprobe in CI.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  NV_VERSION: 470.256.02
+  NV_RUN: NVIDIA-Linux-x86_64-470.256.02.run
+  NV_URL: https://us.download.nvidia.com/XFree86/Linux-x86_64/470.256.02/NVIDIA-Linux-x86_64-470.256.02.run
+  # sha512 of the .run: 6th entry of PKGBUILD sha512sums (matches source order).
+  # Verified 2026-10-14: fresh 272850014-byte download from NVIDIA.
+  NV_SHA512: a837946dd24d7945c1962a695f1f31965f3ceb6927f52cd08fd51b8db138b7a888bbeab69243f5c8468a7bd7ccd47f5dbdb48a1ca81264866c1ebb7d88628f88
+
+jobs:
+  patch-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache NVIDIA .run
+        uses: actions/cache@v4
+        with:
+          path: /tmp/nvdl
+          key: nvidia-run-${{ env.NV_VERSION }}-${{ env.NV_SHA512 }}
+
+      - name: Download + verify .run
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nvdl
+
+          target="/tmp/nvdl/$NV_RUN"
+          temporary="${target}.tmp"
+
+          if [[ -f "$target" ]] &&
+             echo "$NV_SHA512  $target" | sha512sum -c -; then
+            echo "Using verified cached NVIDIA installer"
+          else
+            echo "Cached installer missing or invalid; downloading fresh copy"
+            rm -f "$target" "$temporary"
+
+            wget -O "$temporary" "$NV_URL" || \
+            wget -O "$temporary" "https://download.nvidia.com/XFree86/Linux-x86_64/${NV_VERSION}/$NV_RUN"
+
+            ls -l "$temporary"
+            file "$temporary"
+            # .run is ~300MB; anything tiny is an error page, not the driver
+            SIZE=$(stat -c%s "$temporary")
+            if [ "$SIZE" -lt 100000000 ]; then
+              echo "too small ($SIZE bytes), showing head:"; head -c 500 "$temporary"; exit 1
+            fi
+            echo "$NV_SHA512  $temporary" | sha512sum -c - || {
+              echo "fresh download hash mismatch — actual:"; sha512sum "$temporary"; exit 1;
+            }
+            mv "$temporary" "$target"
+          fi
+
+      - name: Extract driver
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/nvtest && mkdir -p /tmp/nvtest
+          cp /tmp/nvdl/$NV_RUN /tmp/nvtest/
+          cd /tmp/nvtest
+          sh $NV_RUN --extract-only > /dev/null
+          ls NVIDIA-Linux-x86_64-$NV_VERSION/kernel/Kbuild
+
+      - name: PKGBUILD source/sums count match
+        run: |
+          set -euo pipefail
+          cd $GITHUB_WORKSPACE
+          # count quoted entries in source=(...) and sha512sums=(...) blocks
+          SRC=$(sed -n '/^source=(/,/) *$/p' PKGBUILD | grep -c "['\"]")
+          SUMS=$(sed -n '/^sha512sums=(/,/) *$/p' PKGBUILD | grep -c "['\"]")
+          echo "sources=$SRC sums=$SUMS"
+          [ "$SRC" -eq "$SUMS" ] || { echo "MISMATCH: $SRC sources vs $SUMS sums"; exit 1; }
+
+      - name: Route A (main) dry-run + apply
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/routeA && mkdir -p /tmp/routeA
+          cd /tmp/nvtest && cp -r NVIDIA-Linux-x86_64-$NV_VERSION /tmp/routeA/
+          cd /tmp/routeA/NVIDIA-Linux-x86_64-$NV_VERSION
+          patch -p3 --dry-run -i $GITHUB_WORKSPACE/nvidia-470xx-fix-linux-7.0.patch
+          patch -p3 -i $GITHUB_WORKSPACE/nvidia-470xx-fix-linux-7.0.patch
+          echo "ROUTE_A_APPLY_OK=1" >> $GITHUB_ENV
+
+      - name: Route B (series + dma-fence) dry-run + apply
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/routeB && mkdir -p /tmp/routeB
+          cd /tmp/nvtest && cp -r NVIDIA-Linux-x86_64-$NV_VERSION /tmp/routeB/
+          cd /tmp/routeB/NVIDIA-Linux-x86_64-$NV_VERSION/kernel
+          # NOTE: dry-run and apply per patch in ONE loop. The series stacks
+          # (0002 expects 0001's changes already in place), so dry-running
+          # all patches up front against the pristine tree always fails.
+          for p in \
+            0001-Fix-conftest-to-ignore-implicit-function-declaration.patch \
+            0002-Fix-conftest-to-use-a-short-wchar_t.patch \
+            0003-Fix-conftest-to-use-nv_drm_gem_vmap-which-has-the-se.patch \
+            nvidia-470xx-fix-gcc-15.patch \
+            kernel-6.10.patch \
+            kernel-6.12.patch \
+            nvidia-470xx-fix-linux-6.13.patch \
+            nvidia-470xx-fix-linux-6.14.patch \
+            nvidia-470xx-fix-linux-6.15.patch \
+            nvidia-470xx-fix-linux-6.17.patch \
+            nvidia-470xx-fix-linux-6.19-part1.patch \
+            nvidia-470xx-fix-linux-6.19-part2.patch \
+            nvidia-470xx-fix-linux-7.0-dma-fence.patch; do
+            [ -f "$GITHUB_WORKSPACE/$p" ] || { echo "MISSING: $p"; exit 1; }
+            patch -p1 --dry-run -i "$GITHUB_WORKSPACE/$p" || { echo "DRYRUN_FAIL: $p"; exit 1; }
+            patch -p1 -i "$GITHUB_WORKSPACE/$p" || { echo "APPLY_FAIL: $p"; exit 1; }
+          done
+          echo "ROUTE_B_APPLY_OK=1" >> $GITHUB_ENV
+
+      - name: Keep patched trees for compile job
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/patched-trees.tar.gz -C /tmp routeA routeB
+
+      - name: Upload patched trees
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-trees
+          path: /tmp/patched-trees.tar.gz
+          retention-days: 1
+
+  compile-check:
+    needs: patch-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps + headers (running kernel + best-effort HWE 7.0)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q build-essential kmod pahole > /dev/null
+          sudo apt-get install -y -q linux-headers-$(uname -r) > /dev/null || true
+          # best effort: Ubuntu 24.04.5 HWE ships 7.0.0-38 per issue #7.
+          # May not exist on runner image yet; never fail the job here.
+          sudo apt-get install -y -q linux-generic-hwe-24.04 > /dev/null || true
+          echo "--- available build dirs ---"
+          ls -d /lib/modules/*/build 2>/dev/null || true
+          uname -r
+
+      - name: Fetch patched trees
+        uses: actions/download-artifact@v4
+        with:
+          name: patched-trees
+          path: /tmp/artifacts
+
+      - name: Unpack patched trees
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/artifacts/patched-trees.tar.gz -C /tmp
+          ls -d /tmp/routeA /tmp/routeB
+
+      - name: Build both routes against newest headers present
+        run: |
+          set -euo pipefail
+          # prefer a 7.0 build dir if HWE installed one, else running kernel
+          KDIR=$(ls -d /lib/modules/7.0*/build 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$KDIR" ]; then KDIR="/lib/modules/$(uname -r)/build"; fi
+          echo "KDIR=$KDIR" | tee -a $GITHUB_ENV
+          echo "gcc: $(gcc --version | head -1)"
+          for R in routeA routeB; do
+            echo "=== building $R ==="
+            cd /tmp/$R/NVIDIA-Linux-x86_64-$NV_VERSION/kernel
+            make -j"$(nproc)" modules SYSSRC="$KDIR" SYSOUT="$KDIR" 2>&1 | tee /tmp/build-$R.log
+            echo "--- $R .ko count ---"
+            find . -name '*.ko' | tee /tmp/ko-$R.txt
+            [ "$(wc -l < /tmp/ko-$R.txt)" -eq 5 ] || { echo "$R: expected 5 .ko files"; exit 1; }
+            echo "--- $R modinfo ---"
+            for m in $(cat /tmp/ko-$R.txt); do modinfo "$m" | head -3; done
+          done
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            /tmp/build-*.log
+            /tmp/ko-*.txt
+          retention-days: 7
