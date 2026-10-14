@@ -29,24 +29,39 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/nvdl
-          key: nvidia-run-${{ env.NV_VERSION }}
+          key: nvidia-run-${{ env.NV_VERSION }}-${{ env.NV_SHA512 }}
 
       - name: Download + verify .run
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/nvdl
-          if [ ! -f /tmp/nvdl/$NV_RUN ]; then
-            wget -O /tmp/nvdl/$NV_RUN "$NV_URL" || \
-            wget -O /tmp/nvdl/$NV_RUN "https://download.nvidia.com/XFree86/Linux-x86_64/${NV_VERSION}/$NV_RUN"
+
+          target="/tmp/nvdl/$NV_RUN"
+          temporary="${target}.tmp"
+
+          if [[ -f "$target" ]] &&
+             echo "$NV_SHA512  $target" | sha512sum -c -; then
+            echo "Using verified cached NVIDIA installer"
+          else
+            echo "Cached installer missing or invalid; downloading fresh copy"
+            rm -f "$target" "$temporary"
+
+            wget -O "$temporary" "$NV_URL" || \
+            wget -O "$temporary" "https://download.nvidia.com/XFree86/Linux-x86_64/${NV_VERSION}/$NV_RUN"
+
+            ls -l "$temporary"
+            file "$temporary"
+            # .run is ~300MB; anything tiny is an error page, not the driver
+            SIZE=$(stat -c%s "$temporary")
+            if [ "$SIZE" -lt 100000000 ]; then
+              echo "too small ($SIZE bytes), showing head:"; head -c 500 "$temporary"; exit 1
+            fi
+            echo "$NV_SHA512  $temporary" | sha512sum -c - || {
+              echo "fresh download hash mismatch — actual:"; sha512sum "$temporary"; exit 1;
+            }
+            mv "$temporary" "$target"
           fi
-          ls -l /tmp/nvdl/$NV_RUN
-          file /tmp/nvdl/$NV_RUN
-          # .run is ~300MB; anything tiny is an error page, not the driver
-          SIZE=$(stat -c%s /tmp/nvdl/$NV_RUN)
-          [ "$SIZE" -gt 100000000 ] || { echo "too small ($SIZE bytes), showing head:"; head -c 500 /tmp/nvdl/$NV_RUN; exit 1; }
-          echo "$NV_SHA512  /tmp/nvdl/$NV_RUN" | sha512sum -c - || {
-            echo "hash mismatch — actual:"; sha512sum /tmp/nvdl/$NV_RUN; exit 1;
-          }
 
       - name: Extract driver
         run: |
