@@ -1,0 +1,55 @@
+name: Driver issue
+description: Anything broken — patch, build, install, or running driver
+title: "[issue]: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem is this?
+      options:
+        - Patch fails to apply
+        - Modules fail to build
+        - Module won't load / unknown symbol
+        - Driver loads but display/OpenGL/CUDA broken
+        - Something else
+  - type: dropdown
+    id: method
+    attributes:
+      label: Which method did you use?
+      options:
+        - Method A (single nvidia-470xx-fix-linux-7.0.patch)
+        - Method B (patch series + dma-fence, Ubuntu HWE)
+        - Other / not sure
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel (`uname -r`)
+      placeholder: "e.g. 7.0.9-arch1-1"
+  - type: input
+    id: distro
+    attributes:
+      label: Distro and version
+      placeholder: "e.g. Arch Linux"
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU model
+      placeholder: "e.g. GeForce GT 720 (GK208)"
+  - type: input
+    id: gcc
+    attributes:
+      label: GCC version
+      description: "Run: gcc --version | head -1"
+      placeholder: paste that line here
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what went wrong? Paste the exact error.
+  - type: textarea
+    id: log
+    attributes:
+      label: Full log
+      description: Paste full patch / make / dmesg output, or attach the log file.
+      render: shell
