@@ -9,7 +9,7 @@
 pkgbase=nvidia-470xx-utils
 pkgname=('nvidia-470xx-utils' 'opencl-nvidia-470xx' 'nvidia-470xx-dkms')
 pkgver=470.256.02
-pkgrel=8.01
+pkgrel=8.02
 arch=('x86_64')
 url="http://www.nvidia.com/"
 license=('custom')
@@ -33,7 +33,7 @@ source=('nvidia-drm-outputclass.conf'
         "nvidia-470xx-fix-linux-6.17.patch"
         "nvidia-470xx-fix-linux-6.19-part1.patch"
         "nvidia-470xx-fix-linux-6.19-part2.patch"
-        "nvidia-470xx-fix-linux-7.0.patch"
+        "nvidia-470xx-fix-linux-7.0-dma-fence.patch"
         )
 
 sha512sums=('de7116c09f282a27920a1382df84aa86f559e537664bb30689605177ce37dc5067748acf9afd66a3269a6e323461356592fdfc624c86523bf105ff8fe47d3770'
@@ -53,7 +53,8 @@ sha512sums=('de7116c09f282a27920a1382df84aa86f559e537664bb30689605177ce37dc50677
             '556c6575f413a7e877d40de2533e65b80857d38f26cd31c2257cdde08818293e761105ac689f006829f8d18387ffbf72f5d5c9d03cb57ccab7a620bb98dbe033'
             '7d68cfc8d088e53a7724104d4093c7b43b863caa0a937598cc4ad22161d69f2e2c15e0c9fc65813c05685d0995966a9f40cdfe86949bb921acfb3de51200453f'
             '9267dfcefbfd1e4e0f7a6661c151aa1626c15b6091766876a23e7e0dd20068a7279b0af2b38153f6ab219ccd5239ee7df0eeecaf754b5ab5dd8286508cb3be34'
-            '9962feaf22b32b3fe7e3125eaafe7319a2bb45ab11482260701b06c6994104e64110466156b22ecc6cd9f493f18575ca56365ede90162b6f7d03877e7c679167')
+            '9962feaf22b32b3fe7e3125eaafe7319a2bb45ab11482260701b06c6994104e64110466156b22ecc6cd9f493f18575ca56365ede90162b6f7d03877e7c679167'
+            '669f931e1e7dd0e52d4a23a9706df45f6dcaa02f955ad36f4508cbbbeb06fab1467e145e8b5ed1d43088aedc756211b00e216879b0dc4a1bcfff815253b0c8ff')
 
 create_links() {
     # create soname links
@@ -91,7 +92,7 @@ prepare() {
     patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-6.17.patch"
     patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-6.19-part1.patch"
     patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-6.19-part2.patch"
-    patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-7.0.patch"
+    patch -p1 -i "${srcdir}/nvidia-470xx-fix-linux-7.0-dma-fence.patch"
 
     sed -i "s/__VERSION_STRING/${pkgver}/" dkms.conf
     sed -i 's/__JOBS/`nproc`/' dkms.conf

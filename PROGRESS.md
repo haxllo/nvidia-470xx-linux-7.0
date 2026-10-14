@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `nvidia-470xx-fix-linux-7.0-dma-fence.patch`: `dma_fence_signal()` returns `void` in kernel 7.0, so `nv_dma_fence_signal()` no longer returns its result (no caller used it)
+
+### Changed
+- Quick start and PKGBUILD apply the AUR series (0001–0003, gcc-15, 6.10 through 6.19-part2) plus the dma-fence patch, in place of `nvidia-470xx-fix-linux-7.0.patch`. On Ubuntu 24.04 (kernel 7.0.0-38) that patch alone built none of the modules (`drm_gem_object_put_unlocked` in `nv-dma.c`, and the 6.12–6.19 DRM changes in `nvidia-drm`), and it conflicts with the series
+
+### Fixed
+- **PKGBUILD**: the 7.0 patch was applied with `-p1`, but its paths need `-p4` from `kernel/` ("can't find file to patch"), and it had no entry in `sha512sums`
+- **conftest**: the wrong results on 7.0 come from the missing `-fms-extensions` flag (`struct filename` in `fs.h` embeds an anonymous struct), which `nvidia-470xx-fix-linux-6.19-part2.patch` adds; `generate_version_overrides` is not needed with the series
+
+### Verified
+- GeForce GT 730 (GK208B), Ubuntu 24.04.5, kernel 7.0.0-38-generic, gcc 13.3.0: all 5 modules build (also against 7.0.0-31 and 6.8.0-146) with no GPL-only or unresolved symbols; installed through Ubuntu's DKMS, `nvidia-smi` reports 470.256.02 in an Xorg session
+
 ## [1.0.0] — 2026-05-22 — All modules working on kernel 7.0.9
 
 ### Added
