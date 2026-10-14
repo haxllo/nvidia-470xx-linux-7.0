@@ -35,8 +35,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/nvdl
-          [ -f /tmp/nvdl/$NV_RUN ] || wget -q -O /tmp/nvdl/$NV_RUN "$NV_URL"
-          echo "$NV_SHA512  /tmp/nvdl/$NV_RUN" | sha512sum -c -
+          if [ ! -f /tmp/nvdl/$NV_RUN ]; then
+            wget -O /tmp/nvdl/$NV_RUN "$NV_URL" || \
+            wget -O /tmp/nvdl/$NV_RUN "https://download.nvidia.com/XFree86/Linux-x86_64/${NV_VERSION}/$NV_RUN"
+          fi
+          ls -l /tmp/nvdl/$NV_RUN
+          file /tmp/nvdl/$NV_RUN
+          # .run is ~300MB; anything tiny is an error page, not the driver
+          SIZE=$(stat -c%s /tmp/nvdl/$NV_RUN)
+          [ "$SIZE" -gt 100000000 ] || { echo "too small ($SIZE bytes), showing head:"; head -c 500 /tmp/nvdl/$NV_RUN; exit 1; }
+          echo "$NV_SHA512  /tmp/nvdl/$NV_RUN" | sha512sum -c - || {
+            echo "hash mismatch — actual:"; sha512sum /tmp/nvdl/$NV_RUN; exit 1;
+          }
 
       - name: Extract driver
         run: |
