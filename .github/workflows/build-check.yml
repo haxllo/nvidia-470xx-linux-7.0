@@ -24,10 +24,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cache NVIDIA .run
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/nvdl
           key: nvidia-run-${{ env.NV_VERSION }}-${{ env.NV_SHA512 }}
@@ -138,8 +138,12 @@ jobs:
     needs: patch-check
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        route: [routeA, routeB]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build deps + headers (running kernel + best-effort HWE 7.0)
         run: |
@@ -166,30 +170,29 @@ jobs:
           tar -xzf /tmp/artifacts/patched-trees.tar.gz -C /tmp
           ls -d /tmp/routeA /tmp/routeB
 
-      - name: Build both routes against newest headers present
+      - name: Build ${{ matrix.route }} against newest headers present
         run: |
           set -euo pipefail
           # prefer a 7.0 build dir if HWE installed one, else running kernel
           KDIR=$(ls -d /lib/modules/7.0*/build 2>/dev/null | sort -V | tail -1 || true)
           if [ -z "$KDIR" ]; then KDIR="/lib/modules/$(uname -r)/build"; fi
-          echo "KDIR=$KDIR" | tee -a $GITHUB_ENV
+          echo "KDIR=$KDIR"
           echo "gcc: $(gcc --version | head -1)"
-          for R in routeA routeB; do
-            echo "=== building $R ==="
-            cd /tmp/$R/NVIDIA-Linux-x86_64-$NV_VERSION/kernel
-            make -j"$(nproc)" modules SYSSRC="$KDIR" SYSOUT="$KDIR" 2>&1 | tee /tmp/build-$R.log
-            echo "--- $R .ko count ---"
-            find . -name '*.ko' | tee /tmp/ko-$R.txt
-            [ "$(wc -l < /tmp/ko-$R.txt)" -eq 5 ] || { echo "$R: expected 5 .ko files"; exit 1; }
-            echo "--- $R modinfo ---"
-            for m in $(cat /tmp/ko-$R.txt); do modinfo "$m" | head -3; done
-          done
+          R=${{ matrix.route }}
+          echo "=== building $R ==="
+          cd /tmp/$R/NVIDIA-Linux-x86_64-$NV_VERSION/kernel
+          make -j"$(nproc)" modules SYSSRC="$KDIR" SYSOUT="$KDIR" 2>&1 | tee /tmp/build-$R.log
+          echo "--- $R .ko count ---"
+          find . -name '*.ko' | tee /tmp/ko-$R.txt
+          [ "$(wc -l < /tmp/ko-$R.txt)" -eq 5 ] || { echo "$R: expected 5 .ko files"; exit 1; }
+          echo "--- $R modinfo ---"
+          for m in $(cat /tmp/ko-$R.txt); do modinfo "$m" | head -3; done
 
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
+          name: build-logs-${{ matrix.route }}
           path: |
             /tmp/build-*.log
             /tmp/ko-*.txt
