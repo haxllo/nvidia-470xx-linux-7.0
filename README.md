@@ -5,7 +5,7 @@
 [![Driver](https://badgen.net/badge/Driver/470.256.02/76b900)](#)
 ![Stars](https://badgen.net/github/stars/haxllo/nvidia-470xx-linux-7.0/)
 [![Release](https://badgen.net/github/release/haxllo/nvidia-470xx-linux-7.0/)](https://github.com/haxllo/nvidia-470xx-linux-7.0/releases/latest)
-> Build and install NVIDIA 470.256.02 (the final Kepler-supporting driver) on Linux kernel 7.0 — for any distribution.
+> Build and install NVIDIA 470.256.02 (the final Kepler-supporting driver) on Linux kernel 7.0.
 
 GeForce GT/GTX 6xx/7xx (Kepler) owners have been stuck since NVIDIA dropped support after driver 470. This patch gets that driver compiling and running on kernel 7.0.
 
@@ -14,7 +14,7 @@ GeForce GT/GTX 6xx/7xx (Kepler) owners have been stuck since NVIDIA dropped supp
 - All 5 kernel modules compile with zero errors: `nvidia`, `nvidia-uvm`, `nvidia-modeset`, `nvidia-drm`, `nvidia-peermem`
 - Conftest probes detect the kernel correctly on 7.0, so no macro overrides are needed
 - Xorg, OpenGL, CUDA 11.4, Vulkan, VDPAU, NVENC/NVDEC all functional
-- The AUR patch series plus one small patch for 7.0; works on any distro, including Ubuntu's DKMS packages
+- Two routes: single patch (Method A, default) or AUR series + dma-fence patch (Method B, Ubuntu 24.04 HWE). Tested on Arch 7.0.9, Ubuntu 26.04 and Ubuntu 24.04 HWE 7.0.0-38 only — open an issue if it fails on yours
 
 ## Prerequisites
 
@@ -31,7 +31,13 @@ wget https://us.download.nvidia.com/XFree86/Linux-x86_64/470.256.02/NVIDIA-Linux
 sh NVIDIA-Linux-x86_64-470.256.02.run --extract-only
 cd NVIDIA-Linux-x86_64-470.256.02
 
-# 2. Apply the patches, in this order, from the driver's kernel/ directory
+# 2. Apply ONE of the following (not both — they change the same lines)
+
+# Method A (default; confirmed on Arch 7.0.9 and Ubuntu 26.04)
+patch -p3 -i /path/to/nvidia-470xx-fix-linux-7.0.patch
+
+# Method B (Ubuntu 24.04 HWE kernel 7.0.0-38): the patch series,
+# applied in this order from the driver's kernel/ directory
 PATCHES=/path/to/nvidia-470xx-linux-7.0
 cd kernel
 for p in \
@@ -49,7 +55,7 @@ for p in \
     nvidia-470xx-fix-linux-6.19-part2.patch \
     nvidia-470xx-fix-linux-7.0-dma-fence.patch
 do
-    patch -p1 -i "$PATCHES/$p" || { echo "FAILED: $p"; break; }
+    patch -p1 -i "$PATCHES/$p" || { echo "FAILED: $p"; exit 1; }
 done
 cd ..
 
@@ -146,7 +152,7 @@ The patches address:
 
 All patches apply to the driver's `kernel/` directory with `patch -p1`.
 
-`nvidia-470xx-fix-linux-7.0.patch` is the earlier single patch against the unpatched driver. It works around the wrong probe results with `generate_version_overrides`, which reads `LINUX_VERSION_CODE` and overrides 20+ macros. It changes the same lines as the series, so apply one or the other, not both.
+`nvidia-470xx-fix-linux-7.0.patch` is the Method A single patch against the unpatched driver. It works around the wrong probe results with `generate_version_overrides`, which reads `LINUX_VERSION_CODE` and overrides 20+ macros. It changes the same lines as the series, so apply one or the other, not both.
 
 ## Troubleshooting
 
