@@ -24,10 +24,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Cache NVIDIA .run
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/nvdl
           key: nvidia-run-${{ env.NV_VERSION }}-${{ env.NV_SHA512 }}
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install build deps + headers (running kernel + best-effort HWE 7.0)
         run: |
