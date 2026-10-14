@@ -15,8 +15,9 @@ env:
   NV_VERSION: 470.256.02
   NV_RUN: NVIDIA-Linux-x86_64-470.256.02.run
   NV_URL: https://us.download.nvidia.com/XFree86/Linux-x86_64/470.256.02/NVIDIA-Linux-x86_64-470.256.02.run
-  # sha512 of the .run from PKGBUILD (6th entry, matches the URL entry)
-  NV_SHA512: 55def6319f6abb1a4ccd28a89cd60f1933d155c10ba775b8dfa60a2dc5696b4b472c14b252dc0891f956e70264be87c3d5d4271e929a4fc4b1a68a6902814cee
+  # sha512 of the .run: 6th entry of PKGBUILD sha512sums (matches source order).
+  # Verified 2026-10-14: fresh 272850014-byte download from NVIDIA.
+  NV_SHA512: a837946dd24d7945c1962a695f1f31965f3ceb6927f52cd08fd51b8db138b7a888bbeab69243f5c8468a7bd7ccd47f5dbdb48a1ca81264866c1ebb7d88628f88
 
 jobs:
   patch-check:
